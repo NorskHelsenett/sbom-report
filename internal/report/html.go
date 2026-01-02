@@ -69,35 +69,43 @@ const htmlTemplate = `<!doctype html>
       --color-gray-1: #000000;
       --color-gray-2: #808285;
       --color-gray-3: #BCBEC0;
+      
+      --bg-primary: #0d1117;
+      --bg-secondary: #161b22;
+      --bg-tertiary: #1c2128;
+      --text-primary: #e6edf3;
+      --text-secondary: #8b949e;
+      --border-color: #30363d;
     }
     body { 
       font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; 
       margin: 24px; 
       line-height: 1.35;
-      color: var(--color-gray-1);
+      color: var(--text-primary);
+      background-color: var(--bg-primary);
     }
-    h1, h2, h3 { color: var(--color-primary-dark); }
+    h1, h2, h3 { color: var(--color-primary-light); }
     a { color: var(--color-green-3); text-decoration: none; }
     a:hover { text-decoration: underline; }
-    .muted { color: var(--color-gray-2); }
+    .muted { color: var(--text-secondary); }
     .ok { font-weight: 600; color: var(--color-green-3); }
-    .bad { font-weight: 700; color: #d32f2f; }
+    .bad { font-weight: 700; color: #f85149; }
     .box { 
-      border: 1px solid var(--color-green-4); 
+      border: 1px solid var(--border-color); 
       border-radius: 10px; 
       padding: 16px; 
       margin: 14px 0;
-      background: #fafafa;
+      background: var(--bg-secondary);
     }
     table { 
       border-collapse: collapse; 
       width: 100%;
-      background: white;
+      background: var(--bg-tertiary);
       border-radius: 8px;
       overflow: hidden;
     }
     th, td { 
-      border-bottom: 1px solid var(--color-green-4); 
+      border-bottom: 1px solid var(--border-color); 
       padding: 8px; 
       text-align: left; 
       vertical-align: top; 
@@ -130,11 +138,12 @@ const htmlTemplate = `<!doctype html>
       opacity: 1;
     }
     code { 
-      background: var(--color-green-4); 
+      background: var(--bg-primary); 
       padding: 2px 4px; 
       border-radius: 5px;
-      color: var(--color-green-1);
+      color: var(--color-primary-light);
       font-size: 0.9em;
+      border: 1px solid var(--border-color);
     }
     .pill { 
       display: inline-block; 
@@ -142,8 +151,8 @@ const htmlTemplate = `<!doctype html>
       border-radius: 999px; 
       border: 1px solid var(--color-green-3); 
       font-size: 12px;
-      background: var(--color-green-4);
-      color: var(--color-primary-dark);
+      background: var(--color-green-1);
+      color: var(--color-primary-light);
       font-weight: 500;
     }
     .cve-badge {
@@ -163,20 +172,21 @@ const htmlTemplate = `<!doctype html>
     .vuln-section {
       margin-top: 8px;
       padding-top: 8px;
-      border-top: 1px solid var(--color-green-4);
+      border-top: 1px solid var(--border-color);
     }
     details summary { 
       cursor: pointer; 
-      color: var(--color-green-2);
+      color: var(--color-green-3);
       font-weight: 500;
     }
-    details summary:hover { color: var(--color-green-3); }
+    details summary:hover { color: var(--color-primary-light); }
     pre { 
-      background: var(--color-green-4); 
+      background: var(--bg-primary); 
       padding: 12px; 
       border-radius: 5px;
       overflow-x: auto;
       border-left: 3px solid var(--color-green-3);
+      color: var(--text-primary);
     }
   </style>
 </head>
@@ -310,7 +320,9 @@ const htmlTemplate = `<!doctype html>
           <th class="sortable" data-sort="4">Last activity</th>
           <th class="sortable" data-sort="5">Status</th>
           <th class="sortable" data-sort="6">Liveness Metrics</th>
-          <th class="sortable" data-sort="7">Notes / Errors</th>
+          <th class="sortable" data-sort="7">License</th>
+          <th class="sortable" data-sort="8">Vulnerabilities</th>
+          <th class="sortable" data-sort="9">Notes / Errors</th>
         </tr>
         </thead>
         <tbody>
@@ -339,25 +351,29 @@ const htmlTemplate = `<!doctype html>
               <div>PRs: {{ .OpenPRs }} open / {{ .ClosedPRs }} closed</div>
             </td>
             <td>
+              {{ if .License }}<code>{{ .License }}</code>{{ else }}<span class="muted">-</span>{{ end }}
+            </td>
+            <td>
+              {{ if .Vulnerabilities }}
+                <div><strong>{{ len .Vulnerabilities }} CVEs</strong></div>
+                {{ range .Vulnerabilities }}
+                  <a href="https://nvd.nist.gov/vuln/detail/{{ .ID }}" 
+                     class="cve-badge" 
+                     style="background-color: {{ cvssColor .Score }}"
+                     title="{{ .Title }}">
+                    {{ .ID }}
+                    {{ if .Score }}({{ printf "%.1f" .Score }}){{ end }}
+                  </a>
+                {{ end }}
+              {{ else }}
+                <span class="muted">None</span>
+              {{ end }}
+            </td>
+            <td>
               {{ if .Err }}<div class="bad">{{ .Err }}</div>{{ end }}
               {{ if .Archived }}<div class="bad">Archived</div>{{ end }}
-              {{ if .License }}<div>License: <code>{{ .License }}</code></div>{{ end }}
               {{ if .Notes }}
                 <ul>{{ range .Notes }}<li>{{ . }}</li>{{ end }}</ul>
-              {{ end }}
-              {{ if .Vulnerabilities }}
-                <div class="vuln-section">
-                  <div><strong>Vulnerabilities ({{ len .Vulnerabilities }}):</strong></div>
-                  {{ range .Vulnerabilities }}
-                    <a href="https://nvd.nist.gov/vuln/detail/{{ .ID }}" 
-                       class="cve-badge" 
-                       style="background-color: {{ cvssColor .Score }}"
-                       title="{{ .Title }}">
-                      {{ .ID }}
-                      {{ if .Score }}({{ printf "%.1f" .Score }}){{ end }}
-                    </a>
-                  {{ end }}
-                </div>
               {{ end }}
             </td>
           </tr>

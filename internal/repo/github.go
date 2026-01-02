@@ -53,7 +53,7 @@ func fillGitHub(cfg *config.Config, ra *Assessment) {
 	repoAPI := fmt.Sprintf("https://api.github.com/repos/%s/%s", ra.Owner, ra.Repo)
 	var gr ghRepo
 	if err := ghGet(ctx, cfg, repoAPI, &gr); err != nil {
-		ra.Err = "GitHub repo API error: " + err.Error()
+		ra.Err = fmt.Sprintf("GitHub API error for %s/%s: %s", ra.Owner, ra.Repo, err.Error())
 		return
 	}
 
@@ -201,33 +201,77 @@ func getCountFromListEndpoint(ctx context.Context, cfg *config.Config, url strin
 }
 
 func ghGet(ctx context.Context, cfg *config.Config, endpoint string, into any) error {
-	req, err := http.NewRequestWithContext(ctx, "GET", endpoint, nil)
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Accept", "application/vnd.github+json")
-	req.Header.Set("User-Agent", cfg.UserAgent)
-	if cfg.GitHubToken != "" {
-		req.Header.Set("Authorization", "Bearer "+cfg.GitHubToken)
-	}
+	maxRetries := 3
+	var lastErr error
+	
+	for attempt := 0; attempt < maxRetries; attempt++ {
+		if attempt > 0 {
+			// Exponential backoff: 1s, 2s, 4s
+			time.Sleep(time.Duration(1<<uint(attempt-1)) * time.Second)
+		}
+		
+		req, err := http.NewRequestWithContext(ctx, "GET", endpoint, nil)
+		if err != nil {
+			return err
+		}
+		req.Header.Set("Accept", "application/vnd.github+json")
+		req.Header.Set("User-Agent", cfg.UserAgent)
+		if cfg.GitHubToken != "" {
+			req.Header.Set("Authorization", "Bearer "+cfg.GitHubToken)
+		}
 
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
+		// Create client that follows redirects
+		client := &http.Client{
+			CheckRedirect: func(req *http.Request, via []*http.Request) error {
+				if len(via) >= 10 {
+					return fmt.Errorf("too many redirects")
+				}
+				// Copy headers to redirected request
+				if cfg.GitHubToken != "" {
+					req.Header.Set("Authorization", "Bearer "+cfg.GitHubToken)
+				}
+				req.Header.Set("Accept", "application/vnd.github+json")
+				req.Header.Set("User-Agent", cfg.UserAgent)
+				return nil
+			},
+		}
 
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		b, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
-		return fmt.Errorf("HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(b)))
-	}
+		resp, err := client.Do(req)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		defer resp.Body.Close()
 
-	body, err := io.ReadAll(io.LimitReader(resp.Body, cfg.MaxHTTPBytes))
-	if err != nil {
-		return err
-	}
+		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+			b, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
+			lastErr = fmt.Errorf("HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(b)))
+			
+			// Don't retry on 404 - it's a permanent error
+			if resp.StatusCode == 404 {
+				return lastErr
+			}
+			// Retry on 5xx or rate limit errors
+			if resp.StatusCode >= 500 || resp.StatusCode == 429 {
+				continue
+			}
+			return lastErr
+		}
 
-	return unmarshalJSON(body, into)
+		body, err := io.ReadAll(io.LimitReader(resp.Body, cfg.MaxHTTPBytes))
+		if err != nil {
+			lastErr = err
+			continue
+		}
+
+		if err := unmarshalJSON(body, into); err != nil {
+			return err
+		}
+		
+		return nil
+	}
+	
+	return fmt.Errorf("after %d retries: %w", maxRetries, lastErr)
 }
 
 func naiveCountryGuess(location string) string {

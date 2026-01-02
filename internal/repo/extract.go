@@ -102,8 +102,9 @@ func ExtractReposFromPythonPackages(cfg *config.Config, packages []deps.PackageR
 
 type npmPackageInfo struct {
 	Repository struct {
-		Type string `json:"type"`
-		URL  string `json:"url"`
+		Type      string `json:"type"`
+		URL       string `json:"url"`
+		Directory string `json:"directory"` // For monorepos
 	} `json:"repository"`
 	Homepage string `json:"homepage"`
 }
@@ -134,6 +135,8 @@ func ExtractReposFromNpmPackages(cfg *config.Config, packages []deps.PackageRef)
 		var repoURL string
 		if strings.Contains(info.Repository.URL, "github.com") {
 			repoURL = info.Repository.URL
+			// Note: for monorepos, info.Repository.Directory contains the package path
+			// but we want the main repo URL, so we ignore the directory field
 		} else if strings.Contains(info.Homepage, "github.com") {
 			repoURL = info.Homepage
 		}
@@ -167,6 +170,10 @@ func parseGitHubURL(rawURL string) *git.Remote {
 	}
 
 	path := strings.Trim(parsed.Path, "/")
+	
+	// Remove .git suffix if present
+	path = strings.TrimSuffix(path, ".git")
+	
 	parts := strings.Split(path, "/")
 	if len(parts) < 2 {
 		return nil
@@ -174,6 +181,8 @@ func parseGitHubURL(rawURL string) *git.Remote {
 
 	owner := parts[0]
 	repo := parts[1]
+	
+	// Only take the first two parts (owner/repo), ignore any additional path segments
 	repoPath := owner + "/" + repo
 
 	return &git.Remote{
