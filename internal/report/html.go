@@ -277,6 +277,18 @@ const htmlTemplate = `<!doctype html>
     <details open>
       <summary>Dependency / Package Repository Usage</summary>
 
+      <div style="margin-bottom: 16px; padding: 12px; background: var(--bg-tertiary); border-radius: 6px; border-left: 3px solid var(--color-green-3);">
+        <strong style="color: var(--color-primary-light);">📊 Dependency Graph Visualization</strong>
+        <div style="margin-top: 8px;">
+          <a href="dependency-graph.svg" target="_blank" style="color: var(--color-green-3); font-weight: 500;">
+            View Interactive Dependency Graph →
+          </a>
+        </div>
+        <div class="muted" style="font-size: 12px; margin-top: 4px;">
+          Opens a visual representation of all dependencies and their interconnections
+        </div>
+      </div>
+
       <h3>Go modules</h3>
       {{ if .Dependencies.GoModules }}
       <table>

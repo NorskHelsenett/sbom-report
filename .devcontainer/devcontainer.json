@@ -1,0 +1,58 @@
+// For format details, see https://aka.ms/devcontainer.json. For config options, see the
+// README at: https://github.com/devcontainers/templates/tree/main/src/go .
+{
+        "name": "Go",
+        // Or use a Dockerfile or Docker Compose file. More info: https://containers.dev/guide/dockerfile
+        "image": "mcr.microsoft.com/devcontainers/base:trixie",
+        "features": {
+                "ghcr.io/devcontainers/features/python:1": {
+                        "installTools": true,
+                        "version": "latest"
+                },
+                "ghcr.io/eitsupi/devcontainer-features/jq-likes:2": {
+                        "allowJqRcVersion": true,
+                        "jqVersion": "latest",
+                        "yqVersion": "latest",
+                        "gojqVersion": "latest",
+                        "xqVersion": "latest",
+                        "jaqVersion": "latest"
+                },
+                "ghcr.io/dhoeric/features/trivy": {
+                        "version": "latest"
+                },
+                "ghcr.io/jsburckhardt/devcontainer-features/bat:1": {},
+                "ghcr.io/devcontainers-extra/features/curl-apt-get:1": {},
+                "ghcr.io/devcontainers/features/docker-in-docker:2": {
+                        "moby": "false"
+                },
+                "ghcr.io/devcontainers/features/go:1": {
+                        "version": "latest"
+                },
+                "ghcr.io/devcontainers-extra/features/npm-package:1": {
+                        "package": "typescript",
+                        "version": "latest"
+                },
+                "ghcr.io/devcontainers/features/node:1": {
+                        "nodeGypDependencies": true,
+                        "installYarnUsingApt": true,
+                        "version": "lts",
+                        "pnpmVersion": "latest",
+                        "nvmVersion": "latest"
+                }
+        }
+
+        // Features to add to the dev container. More info: https://containers.dev/features.
+        // "features": {},
+
+        // Use 'forwardPorts' to make a list of ports inside the container available locally.
+        // "forwardPorts": [],
+
+        // Use 'postCreateCommand' to run commands after the container is created.
+        // "postCreateCommand": "go version",
+
+        // Configure tool-specific properties.
+        // "customizations": {},
+
+        // Uncomment to connect as root instead. More info: https://aka.ms/dev-containers-non-root.
+        // "remoteUser": "root"
+}

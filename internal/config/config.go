@@ -27,5 +27,6 @@ type Config struct {
 	TrivyFormat    string
 	TrivySBOMName  string
 	HTMLReportName string
+	GraphSVGName   string
 	VulnMap        map[string][]VulnInfo
 }

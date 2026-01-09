@@ -10,6 +10,7 @@ import (
 	"sbom-report/internal/config"
 	"sbom-report/internal/deps"
 	"sbom-report/internal/git"
+	"sbom-report/internal/graph"
 	"sbom-report/internal/repo"
 	"sbom-report/internal/report"
 	"sbom-report/internal/sbom"
@@ -31,6 +32,7 @@ func main() {
 	cfg.MaxHTTPBytes = 2 << 20 // 2MB
 	cfg.TrivySBOMName = "sbom.cdx.json"
 	cfg.HTMLReportName = "report.html"
+	cfg.GraphSVGName = "dependency-graph.svg"
 
 	// Inform user about GitHub authentication status
 	if cfg.GitHubToken != "" {
@@ -61,11 +63,11 @@ func run(cfg *config.Config) error {
 		BaseDir:     cfg.BaseDir,
 	}
 
-	// 1) Run trivy SBOM
+	// Run trivy SBOM
 	sbomPath := filepath.Join(cfg.OutDir, cfg.TrivySBOMName)
 	rep.Trivy = sbom.RunTrivy(cfg.TrivyPath, cfg.TrivyFormat, cfg.BaseDir, sbomPath)
 
-	// 2) Parse SBOM (best-effort)
+	// Parse SBOM (best-effort)
 	if rep.Trivy.OK {
 		summary, err := sbom.ParseCycloneDX(sbomPath)
 		if err != nil {
@@ -80,7 +82,7 @@ func run(cfg *config.Config) error {
 		rep.Dependencies.PythonReqs = append(rep.Dependencies.PythonReqs, pythonPkgs...)
 	}
 
-	// 2b) Run vulnerability scan
+	// Run vulnerability scan
 	fmt.Println("Running vulnerability scan...")
 	vulnPath := filepath.Join(cfg.OutDir, "vulns.json")
 	vulnMap, err := sbom.RunVulnerabilityScan(cfg.TrivyPath, cfg.BaseDir, vulnPath)
@@ -94,7 +96,7 @@ func run(cfg *config.Config) error {
 		}
 		fmt.Printf("✓ Found %d vulnerabilities across %d packages\n", totalVulns, len(vulnMap))
 	}
-	
+
 	// Convert sbom.VulnInfo to config.VulnInfo for cfg
 	cfgVulnMap := make(map[string][]config.VulnInfo)
 	for pkg, vulns := range vulnMap {
@@ -114,20 +116,20 @@ func run(cfg *config.Config) error {
 	}
 	cfg.VulnMap = cfgVulnMap
 
-	// 3) Discover project git info + remotes
+	// Discover project git info + remotes
 	rep.Project.GitDetected = git.IsGitRepo(cfg.BaseDir)
 	if rep.Project.GitDetected {
 		rep.Project.Remotes = git.GetRemotes(cfg.BaseDir)
 		rep.Project.LastCommit = git.GetLastCommit(cfg.BaseDir)
 	}
 
-	// 4) Discover package repository usage (best-effort)
+	// Discover package repository usage (best-effort)
 	rep.Dependencies.GoModules = deps.DiscoverGoModules(cfg.BaseDir)
 	rep.Dependencies.NpmPackages = append(rep.Dependencies.NpmPackages, deps.DiscoverNpm(cfg.BaseDir)...)
 	rep.Dependencies.PythonReqs = append(rep.Dependencies.PythonReqs, deps.DiscoverPythonReqs(cfg.BaseDir)...)
 	rep.Dependencies.MavenDeps = deps.DiscoverMaven(cfg.BaseDir)
 
-	// 5) Assess remote repos (focus on GitHub out-of-box)
+	// Assess remote repos (focus on GitHub out-of-box)
 	// Start with git remotes
 	rep.Repos = repo.AssessRemotes(cfg, rep.Project.Remotes, rep.Project.LastCommit)
 
@@ -145,7 +147,27 @@ func run(cfg *config.Config) error {
 	fmt.Printf("✓ Resolved %d/%d NPM packages to GitHub repos\n", len(npmRepos), len(rep.Dependencies.NpmPackages))
 	rep.Repos = append(rep.Repos, repo.AssessModuleRepos(cfg, npmRepos)...)
 
-	// 6) Render HTML report
+	// Generate dependency graph SVG
+	graphPath := filepath.Join(cfg.OutDir, cfg.GraphSVGName)
+	projectName := filepath.Base(cfg.BaseDir)
+	fmt.Println("\nGenerating dependency graph...")
+	if err := graph.GenerateDependencyGraph(
+		graphPath,
+		projectName,
+		rep.Dependencies.GoModules,
+		rep.Dependencies.NpmPackages,
+		rep.Dependencies.PythonReqs,
+		rep.Dependencies.MavenDeps,
+		rep.Repos,
+	); err != nil {
+		fmt.Printf("Warning: failed to generate dependency graph: %v\n", err)
+	} else {
+		fmt.Printf("✓ Generated dependency graph with %d dependencies\n",
+			len(rep.Dependencies.GoModules)+len(rep.Dependencies.NpmPackages)+
+				len(rep.Dependencies.PythonReqs)+len(rep.Dependencies.MavenDeps))
+	}
+
+	// Render HTML report
 	htmlPath := filepath.Join(cfg.OutDir, cfg.HTMLReportName)
 	if err := report.RenderHTML(htmlPath, rep); err != nil {
 		return err
@@ -153,6 +175,7 @@ func run(cfg *config.Config) error {
 
 	fmt.Println("\nWrote:")
 	fmt.Println(" -", sbomPath)
+	fmt.Println(" -", graphPath)
 	fmt.Println(" -", htmlPath)
 	return nil
 }
