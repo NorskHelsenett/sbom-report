@@ -95,6 +95,7 @@ func NewServer(dbPath string) (*Server, error) {
 			projects.GET("", handler.ListProjects)
 			projects.GET("/:id", handler.GetProject)
 			projects.PUT("/:id", handler.UpdateProject)
+			projects.POST("/:id/regenerate", handler.RegenerateReport)
 			projects.GET("/:id/reports", handler.ListReportsByProject)
 		}
 

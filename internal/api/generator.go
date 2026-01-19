@@ -19,10 +19,15 @@ import (
 // GenerateReportForRepo generates an SBOM report for a given repository URL
 // It clones the repo, runs the analysis, and stores the results in the database
 func GenerateReportForRepo(repoURL, projectName, projectDesc string, cfg *config.Config) (*database.Report, error) {
-	// Create or get project
-	project, err := database.CreateProject(repoURL, projectName, projectDesc)
+	// Create or get project with token
+	project, err := database.CreateProjectWithToken(repoURL, projectName, projectDesc, cfg.GitHubToken)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create project: %w", err)
+	}
+
+	// Use stored token if not provided in config
+	if cfg.GitHubToken == "" && project.GitHubToken != "" {
+		cfg.GitHubToken = project.GitHubToken
 	}
 
 	// Create a temporary directory for cloning

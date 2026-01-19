@@ -25,6 +25,10 @@ export const updateProject = (id, data) => {
   return api.put(`/v1/projects/${id}`, data);
 };
 
+export const regenerateReport = (id) => {
+  return api.post(`/v1/projects/${id}/regenerate`);
+};
+
 export const getProjectReports = (projectId) => {
   return api.get(`/v1/projects/${projectId}/reports`);
 };

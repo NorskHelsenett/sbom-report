@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { listProjects, getProject, getProjectReports, getReportHTML, getReportGraph, updateProject } from '../api/client';
+import { listProjects, getProject, getProjectReports, getReportHTML, getReportGraph, updateProject, regenerateReport } from '../api/client';
 
 function ProjectsPage() {
   const [projects, setProjects] = useState([]);
@@ -103,6 +103,20 @@ function ProjectsPage() {
     }
   };
 
+  const handleRegenerate = async (projectId) => {
+    if (!confirm('Regenerate SBOM report for this project? This will use the stored GitHub token.')) {
+      return;
+    }
+
+    try {
+      await regenerateReport(projectId);
+      alert('Report regeneration started! Check back in a few minutes.');
+      loadProjects();
+    } catch (err) {
+      setError(err.message);
+    }
+  };
+
   if (loading) return <div className="page"><div className="loading">Loading projects...</div></div>;
   if (error) return <div className="page"><div className="result error">Error: {error}</div></div>;
 
@@ -132,7 +146,10 @@ function ProjectsPage() {
                     View Details
                   </button>
                   <button className="btn btn-secondary" onClick={() => openUpdateModal(project.id)}>
-                    Update / Regenerate
+                    Update Token
+                  </button>
+                  <button className="btn btn-primary" onClick={() => handleRegenerate(project.id)} style={{ width: 'auto' }}>
+                    Regenerate Report
                   </button>
                 </div>
               </div>

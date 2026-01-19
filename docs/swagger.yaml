@@ -306,6 +306,33 @@ paths:
       summary: Update a project and optionally regenerate report
       tags:
       - projects
+  /api/v1/projects/{id}/regenerate:
+    post:
+      description: Triggers regeneration of SBOM report using stored GitHub token
+      parameters:
+      - description: Project ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.SubmitResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+      summary: Regenerate SBOM report for a project
+      tags:
+      - projects
   /api/v1/projects/{id}/reports:
     get:
       description: Returns all reports generated for a specific project

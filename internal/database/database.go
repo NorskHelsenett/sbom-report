@@ -36,10 +36,16 @@ func GetDB() *gorm.DB {
 
 // CreateProject creates a new project or returns existing one
 func CreateProject(repoURL, name, description string) (*Project, error) {
+	return CreateProjectWithToken(repoURL, name, description, "")
+}
+
+// CreateProjectWithToken creates a new project with a GitHub token or returns existing one
+func CreateProjectWithToken(repoURL, name, description, githubToken string) (*Project, error) {
 	project := &Project{
 		RepoURL:     repoURL,
 		Name:        name,
 		Description: description,
+		GitHubToken: githubToken,
 	}
 
 	// Try to find existing project first
@@ -49,6 +55,9 @@ func CreateProject(repoURL, name, description string) (*Project, error) {
 		// Project exists, update it
 		existing.Name = name
 		existing.Description = description
+		if githubToken != "" {
+			existing.GitHubToken = githubToken
+		}
 		if err := DB.Save(&existing).Error; err != nil {
 			return nil, err
 		}

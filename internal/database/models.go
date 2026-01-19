@@ -16,6 +16,7 @@ type Project struct {
 	RepoURL     string   `gorm:"uniqueIndex;not null" json:"repo_url"`
 	Name        string   `json:"name"`
 	Description string   `json:"description"`
+	GitHubToken string   `json:"-"` // Never expose in JSON responses
 	Reports     []Report `gorm:"foreignKey:ProjectID" json:"reports,omitempty"`
 }
 

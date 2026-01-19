@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"sbom-report/internal/config"
@@ -223,6 +224,9 @@ func (h *Handler) UpdateProject(c *gin.Context) {
 	if req.Description != "" {
 		project.Description = req.Description
 	}
+	if req.GitHubToken != "" {
+		project.GitHubToken = req.GitHubToken
+	}
 
 	// Update the project in database
 	if err := database.UpdateProject(project); err != nil {
@@ -232,10 +236,11 @@ func (h *Handler) UpdateProject(c *gin.Context) {
 
 	// If regenerate flag is set, generate a new report
 	if req.Regenerate {
-		// Clone config and override GitHub token if provided
+		// Clone config and use stored token from project
 		cfg := *h.config
-		if req.GitHubToken != "" {
-			cfg.GitHubToken = req.GitHubToken
+		// Use the stored token from the project (which was just updated if provided)
+		if project.GitHubToken != "" {
+			cfg.GitHubToken = project.GitHubToken
 		}
 
 		// Capture values for the goroutine
@@ -257,6 +262,52 @@ func (h *Handler) UpdateProject(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"message": "Project updated successfully",
 		"project": project,
+	})
+}
+
+// RegenerateReport godoc
+// @Summary Regenerate SBOM report for a project
+// @Description Triggers regeneration of SBOM report using stored GitHub token
+// @Tags projects
+// @Produce json
+// @Param id path int true "Project ID"
+// @Success 200 {object} SubmitResponse
+// @Failure 400 {object} ErrorResponse
+// @Failure 404 {object} ErrorResponse
+// @Router /api/v1/projects/{id}/regenerate [post]
+func (h *Handler) RegenerateReport(c *gin.Context) {
+	idStr := c.Param("id")
+	id, err := strconv.ParseUint(idStr, 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Invalid project ID"})
+		return
+	}
+
+	// Get existing project
+	project, err := database.GetProject(uint(id))
+	if err != nil {
+		c.JSON(http.StatusNotFound, ErrorResponse{Error: "Project not found"})
+		return
+	}
+
+	// Clone config and use stored token from project
+	cfg := *h.config
+	if project.GitHubToken != "" {
+		cfg.GitHubToken = project.GitHubToken
+	}
+
+	// Capture values for the goroutine
+	repoURL := project.RepoURL
+	name := project.Name
+	desc := project.Description
+
+	go func(cfg config.Config) {
+		_, _ = GenerateReportForRepo(repoURL, name, desc, &cfg)
+	}(cfg)
+
+	c.JSON(http.StatusOK, SubmitResponse{
+		Message:   "Report regeneration started",
+		ProjectID: project.ID,
 	})
 }
 
@@ -341,7 +392,11 @@ func (h *Handler) GetReportHTML(c *gin.Context) {
 		return
 	}
 
-	c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(report.HTMLReport))
+	// Replace the hardcoded dependency-graph.svg link with the correct API endpoint
+	htmlContent := report.HTMLReport
+	htmlContent = strings.Replace(htmlContent, `href="dependency-graph.svg"`, `href="graph"`, 1)
+
+	c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(htmlContent))
 }
 
 // GetReportGraph godoc
