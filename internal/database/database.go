@@ -81,13 +81,27 @@ func GetProjectByURL(repoURL string) (*Project, error) {
 	return &project, nil
 }
 
-// ListProjects returns all projects
+// ListProjects returns all projects with reports
 func ListProjects() ([]Project, error) {
 	var projects []Project
 	if err := DB.Preload("Reports").Find(&projects).Error; err != nil {
 		return nil, err
 	}
 	return projects, nil
+}
+
+// ListProjectsSummary returns all projects without reports (minimal data)
+func ListProjectsSummary() ([]Project, error) {
+	var projects []Project
+	if err := DB.Find(&projects).Error; err != nil {
+		return nil, err
+	}
+	return projects, nil
+}
+
+// UpdateProject updates an existing project
+func UpdateProject(project *Project) error {
+	return DB.Save(project).Error
 }
 
 // CreateReport creates a new report for a project

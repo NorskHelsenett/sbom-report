@@ -17,6 +17,7 @@ type SubmitRequest struct {
 	RepoURL     string `json:"repo_url" binding:"required" example:"https://github.com/username/repo"`
 	Name        string `json:"name" example:"My Project"`
 	Description string `json:"description" example:"A sample project"`
+	GitHubToken string `json:"github_token,omitempty" example:"ghp_xxxxxxxxxxxx"`
 }
 
 // SubmitResponse represents the response after submitting a repository
@@ -32,10 +33,17 @@ type ErrorResponse struct {
 	Error string `json:"error" example:"Invalid request"`
 }
 
+// ProjectSummary represents minimal project information
+type ProjectSummary struct {
+	ID      uint   `json:"id" example:"1"`
+	Name    string `json:"name" example:"My Project"`
+	RepoURL string `json:"repo_url" example:"https://github.com/owner/repo"`
+}
+
 // ListProjectsResponse represents a list of projects
 type ListProjectsResponse struct {
-	Projects []database.Project `json:"projects"`
-	Count    int                `json:"count" example:"5"`
+	Projects []ProjectSummary `json:"projects"`
+	Count    int              `json:"count" example:"5"`
 }
 
 // ListReportsResponse represents a list of reports
@@ -85,10 +93,16 @@ func (h *Handler) SubmitRepository(c *gin.Context) {
 		projectName = req.RepoURL
 	}
 
+	// Clone config and override GitHub token if provided
+	cfg := *h.config
+	if req.GitHubToken != "" {
+		cfg.GitHubToken = req.GitHubToken
+	}
+
 	// Generate report in the background
 	// For simplicity, we'll do it synchronously here, but in production
 	// you'd want to use a job queue
-	report, err := GenerateReportForRepo(req.RepoURL, projectName, req.Description, h.config)
+	report, err := GenerateReportForRepo(req.RepoURL, projectName, req.Description, &cfg)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: fmt.Sprintf("Failed to generate report: %v", err)})
 		return
@@ -104,22 +118,32 @@ func (h *Handler) SubmitRepository(c *gin.Context) {
 
 // ListProjects godoc
 // @Summary List all projects
-// @Description Returns a list of all submitted projects
+// @Description Returns a minimal list of all submitted projects (ID, name, URL only)
 // @Tags projects
 // @Produce json
 // @Success 200 {object} ListProjectsResponse
 // @Failure 500 {object} ErrorResponse
 // @Router /api/v1/projects [get]
 func (h *Handler) ListProjects(c *gin.Context) {
-	projects, err := database.ListProjects()
+	projects, err := database.ListProjectsSummary()
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: err.Error()})
 		return
 	}
 
+	// Convert to ProjectSummary
+	summaries := make([]ProjectSummary, len(projects))
+	for i, p := range projects {
+		summaries[i] = ProjectSummary{
+			ID:      p.ID,
+			Name:    p.Name,
+			RepoURL: p.RepoURL,
+		}
+	}
+
 	c.JSON(http.StatusOK, ListProjectsResponse{
-		Projects: projects,
-		Count:    len(projects),
+		Projects: summaries,
+		Count:    len(summaries),
 	})
 }
 
@@ -148,6 +172,92 @@ func (h *Handler) GetProject(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, project)
+}
+
+// UpdateProjectRequest represents a request to update and re-analyze a project
+type UpdateProjectRequest struct {
+	Name        string `json:"name,omitempty" example:"Updated Project Name"`
+	Description string `json:"description,omitempty" example:"Updated description"`
+	GitHubToken string `json:"github_token,omitempty" example:"ghp_xxxxxxxxxxxx"`
+	Regenerate  bool   `json:"regenerate,omitempty" example:"true"`
+}
+
+// UpdateProject godoc
+// @Summary Update a project and optionally regenerate report
+// @Description Update project details and optionally regenerate SBOM report with new GitHub token
+// @Tags projects
+// @Accept json
+// @Produce json
+// @Param id path int true "Project ID"
+// @Param request body UpdateProjectRequest true "Update request"
+// @Success 200 {object} SubmitResponse
+// @Failure 400 {object} ErrorResponse
+// @Failure 404 {object} ErrorResponse
+// @Failure 500 {object} ErrorResponse
+// @Router /api/v1/projects/{id} [put]
+func (h *Handler) UpdateProject(c *gin.Context) {
+	idStr := c.Param("id")
+	id, err := strconv.ParseUint(idStr, 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Invalid project ID"})
+		return
+	}
+
+	var req UpdateProjectRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: err.Error()})
+		return
+	}
+
+	// Get existing project
+	project, err := database.GetProject(uint(id))
+	if err != nil {
+		c.JSON(http.StatusNotFound, ErrorResponse{Error: "Project not found"})
+		return
+	}
+
+	// Update project fields if provided
+	if req.Name != "" {
+		project.Name = req.Name
+	}
+	if req.Description != "" {
+		project.Description = req.Description
+	}
+
+	// Update the project in database
+	if err := database.UpdateProject(project); err != nil {
+		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: err.Error()})
+		return
+	}
+
+	// If regenerate flag is set, generate a new report
+	if req.Regenerate {
+		// Clone config and override GitHub token if provided
+		cfg := *h.config
+		if req.GitHubToken != "" {
+			cfg.GitHubToken = req.GitHubToken
+		}
+
+		// Capture values for the goroutine
+		repoURL := project.RepoURL
+		name := project.Name
+		desc := project.Description
+
+		go func(cfg config.Config) {
+			_, _ = GenerateReportForRepo(repoURL, name, desc, &cfg)
+		}(cfg)
+
+		c.JSON(http.StatusOK, SubmitResponse{
+			Message:   "Project updated and report regeneration started",
+			ProjectID: project.ID,
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": "Project updated successfully",
+		"project": project,
+	})
 }
 
 // ListReportsByProject godoc

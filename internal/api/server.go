@@ -65,6 +65,21 @@ func NewServer(dbPath string) (*Server, error) {
 	// Set up Gin router
 	router := gin.Default()
 
+	// Enable CORS for frontend
+	router.Use(func(c *gin.Context) {
+		c.Writer.Header().Set("Access-Control-Allow-Origin", "*")
+		c.Writer.Header().Set("Access-Control-Allow-Credentials", "true")
+		c.Writer.Header().Set("Access-Control-Allow-Headers", "Content-Type, Content-Length, Accept-Encoding, X-CSRF-Token, Authorization, accept, origin, Cache-Control, X-Requested-With")
+		c.Writer.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS, GET, PUT, DELETE")
+
+		if c.Request.Method == "OPTIONS" {
+			c.AbortWithStatus(204)
+			return
+		}
+
+		c.Next()
+	})
+
 	// Health check
 	router.GET("/health", handler.HealthCheck)
 
@@ -79,6 +94,7 @@ func NewServer(dbPath string) (*Server, error) {
 		{
 			projects.GET("", handler.ListProjects)
 			projects.GET("/:id", handler.GetProject)
+			projects.PUT("/:id", handler.UpdateProject)
 			projects.GET("/:id/reports", handler.ListReportsByProject)
 		}
 
@@ -98,8 +114,19 @@ func NewServer(dbPath string) (*Server, error) {
 		}
 	}
 
-	// Swagger documentation
-	router.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
+	// Swagger documentation with auto-redirect
+	// Use doc.json which is the default embedded name
+	docsHandler := ginSwagger.WrapHandler(swaggerFiles.Handler, ginSwagger.URL("/docs/doc.json"))
+	router.GET("/docs/*any", func(c *gin.Context) {
+		if c.Param("any") == "/" || c.Param("any") == "" {
+			c.Redirect(301, "/docs/index.html")
+			return
+		}
+		docsHandler(c)
+	})
+	router.GET("/docs", func(c *gin.Context) {
+		c.Redirect(301, "/docs/index.html")
+	})
 
 	return &Server{
 		router:  router,
@@ -112,6 +139,6 @@ func NewServer(dbPath string) (*Server, error) {
 // Run starts the HTTP server
 func (s *Server) Run(addr string) error {
 	fmt.Printf("Starting SBOM Report API server on %s\n", addr)
-	fmt.Printf("Swagger documentation available at http://%s/swagger/index.html\n", addr)
+	fmt.Printf("Swagger documentation available at http://%s/docs/index.html\n", addr)
 	return s.router.Run(addr)
 }

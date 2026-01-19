@@ -1,25 +1,8 @@
 {
-    "schemes": [
-        "http"
-    ],
     "swagger": "2.0",
     "info": {
-        "description": "API for generating and managing Software Bill of Materials (SBOM) reports",
-        "title": "SBOM Report API",
-        "termsOfService": "http://swagger.io/terms/",
-        "contact": {
-            "name": "API Support",
-            "url": "http://www.swagger.io/support",
-            "email": "support@swagger.io"
-        },
-        "license": {
-            "name": "MIT",
-            "url": "https://opensource.org/licenses/MIT"
-        },
-        "version": "1.0"
+        "contact": {}
     },
-    "host": "localhost:8080",
-    "basePath": "/",
     "paths": {
         "/api/v1/dependencies": {
             "get": {
@@ -86,7 +69,7 @@
         },
         "/api/v1/projects": {
             "get": {
-                "description": "Returns a list of all submitted projects",
+                "description": "Returns a minimal list of all submitted projects (ID, name, URL only)",
                 "produces": [
                     "application/json"
                 ],
@@ -144,6 +127,63 @@
                     },
                     "404": {
                         "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/api.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "description": "Update project details and optionally regenerate SBOM report with new GitHub token",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "projects"
+                ],
+                "summary": "Update a project and optionally regenerate report",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Project ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Update request",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/api.UpdateProjectRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.SubmitResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/api.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/api.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
                         "schema": {
                             "$ref": "#/definitions/api.ErrorResponse"
                         }
@@ -426,7 +466,7 @@
                 "projects": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/database.Project"
+                        "$ref": "#/definitions/api.ProjectSummary"
                     }
                 }
             }
@@ -446,6 +486,23 @@
                 }
             }
         },
+        "api.ProjectSummary": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "name": {
+                    "type": "string",
+                    "example": "My Project"
+                },
+                "repo_url": {
+                    "type": "string",
+                    "example": "https://github.com/owner/repo"
+                }
+            }
+        },
         "api.SubmitRequest": {
             "type": "object",
             "required": [
@@ -455,6 +512,10 @@
                 "description": {
                     "type": "string",
                     "example": "A sample project"
+                },
+                "github_token": {
+                    "type": "string",
+                    "example": "ghp_xxxxxxxxxxxx"
                 },
                 "name": {
                     "type": "string",
@@ -483,6 +544,27 @@
                 "report_id": {
                     "type": "integer",
                     "example": 1
+                }
+            }
+        },
+        "api.UpdateProjectRequest": {
+            "type": "object",
+            "properties": {
+                "description": {
+                    "type": "string",
+                    "example": "Updated description"
+                },
+                "github_token": {
+                    "type": "string",
+                    "example": "ghp_xxxxxxxxxxxx"
+                },
+                "name": {
+                    "type": "string",
+                    "example": "Updated Project Name"
+                },
+                "regenerate": {
+                    "type": "boolean",
+                    "example": true
                 }
             }
         },

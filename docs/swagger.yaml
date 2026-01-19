@@ -1,4 +1,3 @@
-basePath: /
 definitions:
   api.DependencyStatsResponse:
     properties:
@@ -27,7 +26,7 @@ definitions:
         type: integer
       projects:
         items:
-          $ref: '#/definitions/database.Project'
+          $ref: '#/definitions/api.ProjectSummary'
         type: array
     type: object
   api.ListReportsResponse:
@@ -40,10 +39,25 @@ definitions:
           $ref: '#/definitions/database.Report'
         type: array
     type: object
+  api.ProjectSummary:
+    properties:
+      id:
+        example: 1
+        type: integer
+      name:
+        example: My Project
+        type: string
+      repo_url:
+        example: https://github.com/owner/repo
+        type: string
+    type: object
   api.SubmitRequest:
     properties:
       description:
         example: A sample project
+        type: string
+      github_token:
+        example: ghp_xxxxxxxxxxxx
         type: string
       name:
         example: My Project
@@ -67,6 +81,21 @@ definitions:
       report_id:
         example: 1
         type: integer
+    type: object
+  api.UpdateProjectRequest:
+    properties:
+      description:
+        example: Updated description
+        type: string
+      github_token:
+        example: ghp_xxxxxxxxxxxx
+        type: string
+      name:
+        example: Updated Project Name
+        type: string
+      regenerate:
+        example: true
+        type: boolean
     type: object
   database.Dependency:
     properties:
@@ -149,19 +178,8 @@ definitions:
       updated_at:
         type: string
     type: object
-host: localhost:8080
 info:
-  contact:
-    email: support@swagger.io
-    name: API Support
-    url: http://www.swagger.io/support
-  description: API for generating and managing Software Bill of Materials (SBOM) reports
-  license:
-    name: MIT
-    url: https://opensource.org/licenses/MIT
-  termsOfService: http://swagger.io/terms/
-  title: SBOM Report API
-  version: "1.0"
+  contact: {}
 paths:
   /api/v1/dependencies:
     get:
@@ -206,7 +224,8 @@ paths:
       - dependencies
   /api/v1/projects:
     get:
-      description: Returns a list of all submitted projects
+      description: Returns a minimal list of all submitted projects (ID, name, URL
+        only)
       produces:
       - application/json
       responses:
@@ -246,6 +265,45 @@ paths:
           schema:
             $ref: '#/definitions/api.ErrorResponse'
       summary: Get a project by ID
+      tags:
+      - projects
+    put:
+      consumes:
+      - application/json
+      description: Update project details and optionally regenerate SBOM report with
+        new GitHub token
+      parameters:
+      - description: Project ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Update request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/api.UpdateProjectRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.SubmitResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+      summary: Update a project and optionally regenerate report
       tags:
       - projects
   /api/v1/projects/{id}/reports:
@@ -401,6 +459,4 @@ paths:
       summary: Health check endpoint
       tags:
       - system
-schemes:
-- http
 swagger: "2.0"

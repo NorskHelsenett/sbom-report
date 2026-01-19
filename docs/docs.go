@@ -9,16 +9,7 @@ const docTemplate = `{
     "info": {
         "description": "{{escape .Description}}",
         "title": "{{.Title}}",
-        "termsOfService": "http://swagger.io/terms/",
-        "contact": {
-            "name": "API Support",
-            "url": "http://www.swagger.io/support",
-            "email": "support@swagger.io"
-        },
-        "license": {
-            "name": "MIT",
-            "url": "https://opensource.org/licenses/MIT"
-        },
+        "contact": {},
         "version": "{{.Version}}"
     },
     "host": "{{.Host}}",
@@ -89,7 +80,7 @@ const docTemplate = `{
         },
         "/api/v1/projects": {
             "get": {
-                "description": "Returns a list of all submitted projects",
+                "description": "Returns a minimal list of all submitted projects (ID, name, URL only)",
                 "produces": [
                     "application/json"
                 ],
@@ -147,6 +138,63 @@ const docTemplate = `{
                     },
                     "404": {
                         "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/api.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "description": "Update project details and optionally regenerate SBOM report with new GitHub token",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "projects"
+                ],
+                "summary": "Update a project and optionally regenerate report",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Project ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Update request",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/api.UpdateProjectRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.SubmitResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/api.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/api.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
                         "schema": {
                             "$ref": "#/definitions/api.ErrorResponse"
                         }
@@ -429,7 +477,7 @@ const docTemplate = `{
                 "projects": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/database.Project"
+                        "$ref": "#/definitions/api.ProjectSummary"
                     }
                 }
             }
@@ -449,6 +497,23 @@ const docTemplate = `{
                 }
             }
         },
+        "api.ProjectSummary": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "name": {
+                    "type": "string",
+                    "example": "My Project"
+                },
+                "repo_url": {
+                    "type": "string",
+                    "example": "https://github.com/owner/repo"
+                }
+            }
+        },
         "api.SubmitRequest": {
             "type": "object",
             "required": [
@@ -458,6 +523,10 @@ const docTemplate = `{
                 "description": {
                     "type": "string",
                     "example": "A sample project"
+                },
+                "github_token": {
+                    "type": "string",
+                    "example": "ghp_xxxxxxxxxxxx"
                 },
                 "name": {
                     "type": "string",
@@ -486,6 +555,27 @@ const docTemplate = `{
                 "report_id": {
                     "type": "integer",
                     "example": 1
+                }
+            }
+        },
+        "api.UpdateProjectRequest": {
+            "type": "object",
+            "properties": {
+                "description": {
+                    "type": "string",
+                    "example": "Updated description"
+                },
+                "github_token": {
+                    "type": "string",
+                    "example": "ghp_xxxxxxxxxxxx"
+                },
+                "name": {
+                    "type": "string",
+                    "example": "Updated Project Name"
+                },
+                "regenerate": {
+                    "type": "boolean",
+                    "example": true
                 }
             }
         },
@@ -613,12 +703,12 @@ const docTemplate = `{
 
 // SwaggerInfo holds exported Swagger Info so clients can modify it
 var SwaggerInfo = &swag.Spec{
-	Version:          "1.0",
-	Host:             "localhost:8080",
-	BasePath:         "/",
-	Schemes:          []string{"http"},
-	Title:            "SBOM Report API",
-	Description:      "API for generating and managing Software Bill of Materials (SBOM) reports",
+	Version:          "",
+	Host:             "",
+	BasePath:         "",
+	Schemes:          []string{},
+	Title:            "",
+	Description:      "",
 	InfoInstanceName: "swagger",
 	SwaggerTemplate:  docTemplate,
 	LeftDelim:        "{{",
