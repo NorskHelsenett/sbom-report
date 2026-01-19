@@ -277,66 +277,93 @@ func layoutHierarchical(g *Graph) {
 		}
 	}
 
-	// Layout parameters - pacgraph-style tree layout with spacing for label boxes
-	minHorizontalSpacing := 30.0 // Minimum gap between label boxes
-	verticalSpacing := 180.0     // Increased to accommodate label boxes
+	// Layout parameters - vertical stacking layout
+	horizontalSpacing := 150.0   // Spacing between major branches
+	levelVerticalSpacing := 80.0 // Base spacing between levels
+	startX := 500.0              // Offset to avoid legend
 	startY := 100.0
 
-	// Calculate actual width needed for each node's label
-	nodeWidth := make(map[string]float64)
-	for i, node := range g.Nodes {
-		// Estimate text width (roughly 7 pixels per character for 12px monospace font)
-		textWidth := float64(len(node.Label)) * 7.0
-		boxWidth := textWidth + 12.0 // Add padding
-		nodeWidth[node.ID] = boxWidth
-		_ = i
+	// Position nodes with vertical stacking
+	positioned := make(map[string]bool)
+	yOffset := make(map[string]float64) // Track Y offset for each parent's children
+
+	// Position root node(s)
+	rootIndices := levelGroups[0]
+	for _, idx := range rootIndices {
+		nodeID := g.Nodes[idx].ID
+		g.Nodes[idx].X = startX
+		g.Nodes[idx].Y = startY
+		positioned[nodeID] = true
+		yOffset[nodeID] = 0
 	}
 
-	// Calculate positions using a tree layout approach
-	// First pass: calculate subtree widths
-	subtreeWidth := make(map[string]float64)
-
-	// Process levels bottom-up to calculate widths
-	for level := maxLevel; level >= 0; level-- {
+	// Process each level, stacking children vertically
+	for level := 0; level < maxLevel; level++ {
 		indices := levelGroups[level]
-		for _, idx := range indices {
-			nodeID := g.Nodes[idx].ID
-			children := g.adjacencyMap[nodeID]
 
+		for _, idx := range indices {
+			parentID := g.Nodes[idx].ID
+			children := g.adjacencyMap[parentID]
 			if len(children) == 0 {
-				// Leaf node - width is the node's label width plus minimum spacing
-				subtreeWidth[nodeID] = nodeWidth[nodeID] + minHorizontalSpacing
+				continue
+			}
+
+			parentX := g.Nodes[idx].X
+			parentY := g.Nodes[idx].Y
+
+			// Determine if this is a single child or multiple
+			if len(children) == 1 {
+				// Single child: place directly below parent
+				childID := children[0]
+				childIdx, ok := g.nodeIndex[childID]
+				if !ok || positioned[childID] {
+					continue
+				}
+
+				g.Nodes[childIdx].X = parentX
+				g.Nodes[childIdx].Y = parentY + levelVerticalSpacing
+				positioned[childID] = true
 			} else {
-				// Internal node: width is max of (sum of children's widths, own label width)
-				totalWidth := 0.0
-				for _, childID := range children {
-					totalWidth += subtreeWidth[childID]
+				// Multiple children: spread horizontally with staggered Y positions for asymmetry
+				numChildren := len(children)
+				totalWidth := float64(numChildren-1) * horizontalSpacing
+				startChildX := parentX - totalWidth/2
+
+				for i, childID := range children {
+					childIdx, ok := g.nodeIndex[childID]
+					if !ok || positioned[childID] {
+						continue
+					}
+
+					childX := startChildX + float64(i)*horizontalSpacing
+					// Add staggered Y offset based on position (creates wave pattern)
+					yStagger := float64(i%3) * 30.0 // Alternating heights
+					childY := parentY + levelVerticalSpacing + yOffset[parentID] + yStagger
+
+					g.Nodes[childIdx].X = childX
+					g.Nodes[childIdx].Y = childY
+					positioned[childID] = true
+					yOffset[childID] = 0
 				}
-				// Ensure parent is at least as wide as its label
-				ownWidth := nodeWidth[nodeID] + minHorizontalSpacing
-				if totalWidth < ownWidth {
-					totalWidth = ownWidth
-				}
-				subtreeWidth[nodeID] = totalWidth
 			}
 		}
 	}
 
-	// Second pass: position nodes top-down
-	positioned := make(map[string]bool)
+	// Post-process: ensure no nodes have negative X coordinates
+	minX := float64(0)
+	for i := range g.Nodes {
+		if g.Nodes[i].X < minX {
+			minX = g.Nodes[i].X
+		}
+	}
 
-	// Position root node(s)
-	rootIndices := levelGroups[0]
-	currentX := 300.0 // Offset to avoid legend
-
-	for _, idx := range rootIndices {
-		nodeID := g.Nodes[idx].ID
-		width := subtreeWidth[nodeID]
-		g.Nodes[idx].X = currentX + width/2
-		g.Nodes[idx].Y = startY
-		positioned[nodeID] = true
-		positionChildren(g, nodeID, currentX, startY+verticalSpacing, verticalSpacing, subtreeWidth, positioned)
-		currentX += width + minHorizontalSpacing
+	// If any nodes are negative, shift everything right
+	if minX < 0 {
+		leftMargin := float64(300) // Minimum left margin for legend
+		offset := leftMargin - minX
+		for i := range g.Nodes {
+			g.Nodes[i].X += offset
+		}
 	}
 }
 
