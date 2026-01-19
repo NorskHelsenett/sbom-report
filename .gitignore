@@ -1,4 +1,6 @@
 .DS_Store
 ARCHITECTURE.md
 sbom-report
+sbom-server
 out
+*.db
