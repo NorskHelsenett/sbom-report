@@ -44,16 +44,16 @@ func AssessRemotes(cfg *config.Config, remotes []git.Remote, lastCommit *git.Com
 
 func AssessModuleRepos(cfg *config.Config, remotes []git.Remote) []Assessment {
 	var out []Assessment
-	
+
 	if len(remotes) == 0 {
 		return out
 	}
-	
+
 	progress := NewProgressBar(len(remotes), "Assessing GitHub repositories")
-	
+
 	for _, r := range remotes {
 		progress.Increment()
-		
+
 		ra := Assessment{Remote: r}
 
 		provider, owner, repo := classifyRepo(r)
@@ -78,10 +78,20 @@ func AssessModuleRepos(cfg *config.Config, remotes []git.Remote) []Assessment {
 		// Add vulnerability information if available
 		if cfg.VulnMap != nil {
 			// Try to match repo name or owner/repo to package names
+			// Use more precise matching to avoid false positives
+			repoPath := ra.Owner + "/" + ra.Repo
 			for pkgName, vulns := range cfg.VulnMap {
-				// Match if package name contains repo name, or exact match
-				if strings.Contains(pkgName, ra.Repo) || pkgName == ra.Repo || 
-				   strings.Contains(strings.ToLower(pkgName), strings.ToLower(ra.Repo)) {
+				// Match if package name ends with owner/repo or repo name (more precise)
+				// Avoid substring matches that could match common words like "go", "jwt", etc.
+				matched := false
+				if strings.HasSuffix(pkgName, repoPath) || strings.Contains(pkgName, "/"+repoPath) {
+					matched = true
+				} else if strings.HasSuffix(pkgName, "/"+ra.Repo) && len(ra.Repo) > 3 {
+					// Only match by repo name if it's longer than 3 chars to avoid "go", "js", etc.
+					matched = true
+				}
+
+				if matched {
 					for _, v := range vulns {
 						ra.Vulnerabilities = append(ra.Vulnerabilities, Vulnerability{
 							ID:          v.ID,

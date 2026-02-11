@@ -100,20 +100,21 @@ func (h *Handler) SubmitRepository(c *gin.Context) {
 		cfg.GitHubToken = req.GitHubToken
 	}
 
-	// Generate report in the background
-	// For simplicity, we'll do it synchronously here, but in production
-	// you'd want to use a job queue
-	report, err := GenerateReportForRepo(req.RepoURL, projectName, req.Description, &cfg)
+	// Create or get the project first to return the ID immediately
+	project, err := database.CreateProjectWithToken(req.RepoURL, projectName, req.Description, cfg.GitHubToken)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: fmt.Sprintf("Failed to generate report: %v", err)})
+		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: fmt.Sprintf("Failed to create project: %v", err)})
 		return
 	}
 
+	// Generate report in the background (fire and forget)
+	go func(cfg config.Config, repoURL, name, desc string) {
+		_, _ = GenerateReportForRepo(repoURL, name, desc, &cfg)
+	}(cfg, req.RepoURL, projectName, req.Description)
+
 	c.JSON(http.StatusOK, SubmitResponse{
-		Message:   "Report generated successfully",
-		ProjectID: report.ProjectID,
-		ReportID:  report.ID,
-		Report:    report,
+		Message:   "Report generation submitted",
+		ProjectID: project.ID,
 	})
 }
 
@@ -462,23 +463,23 @@ func (h *Handler) GetDependencyStats(c *gin.Context) {
 
 // ListDependencies godoc
 // @Summary List all dependencies
-// @Description Returns all unique dependencies across all projects (deduplicated)
+// @Description Returns all unique dependencies across all projects with usage count
 // @Tags dependencies
 // @Produce json
 // @Param type query string false "Filter by package type (npm, python, go, maven)"
-// @Success 200 {array} database.Dependency
+// @Success 200 {array} database.DependencyWithUsage
 // @Failure 500 {object} ErrorResponse
 // @Router /api/v1/dependencies [get]
 func (h *Handler) ListDependencies(c *gin.Context) {
 	pkgType := c.Query("type")
 
-	var deps []database.Dependency
+	var deps []database.DependencyWithUsage
 	var err error
 
 	if pkgType != "" {
-		deps, err = database.GetDependenciesByPackageType(pkgType)
+		deps, err = database.GetDependenciesByPackageTypeWithUsage(pkgType)
 	} else {
-		deps, err = database.GetAllDependencies()
+		deps, err = database.GetAllDependenciesWithUsage()
 	}
 
 	if err != nil {
@@ -487,6 +488,43 @@ func (h *Handler) ListDependencies(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, deps)
+}
+
+// GetDependencyUsage godoc
+// @Summary Get dependency usage across projects
+// @Description Returns all projects/reports that use a specific dependency
+// @Tags dependencies
+// @Produce json
+// @Param id path int true "Dependency ID"
+// @Success 200 {array} database.Report
+// @Failure 400 {object} ErrorResponse
+// @Failure 404 {object} ErrorResponse
+// @Router /api/v1/dependencies/{id}/usage [get]
+func (h *Handler) GetDependencyUsage(c *gin.Context) {
+	idStr := c.Param("id")
+	id, err := strconv.ParseUint(idStr, 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Invalid dependency ID"})
+		return
+	}
+
+	reports, err := database.GetDependencyUsage(uint(id))
+	if err != nil {
+		c.JSON(http.StatusNotFound, ErrorResponse{Error: "Dependency not found"})
+		return
+	}
+
+	// Load project information for each report
+	for i := range reports {
+		if reports[i].ProjectID > 0 {
+			project, err := database.GetProject(reports[i].ProjectID)
+			if err == nil {
+				reports[i].Project = *project
+			}
+		}
+	}
+
+	c.JSON(http.StatusOK, reports)
 }
 
 // HealthCheck godoc

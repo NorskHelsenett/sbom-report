@@ -39,7 +39,7 @@ type Graph struct {
 }
 
 // GenerateDependencyGraph creates an SVG visualization of dependencies
-func GenerateDependencyGraph(outputPath string, projectName string, goMods []deps.GoModule, npmPkgs, pythonPkgs, mavenDeps []deps.PackageRef, repos []repo.Assessment) error {
+func GenerateDependencyGraph(outputPath string, projectName string, goMods []deps.GoModule, npmPkgs, pythonPkgs, mavenDeps []deps.PackageRef, repos []repo.Assessment, vulnMap map[string]bool) error {
 	g := &Graph{
 		Nodes:        []Node{},
 		Edges:        []Edge{},
@@ -66,7 +66,7 @@ func GenerateDependencyGraph(outputPath string, projectName string, goMods []dep
 
 	// Parse Go module dependencies with transitive relationships
 	if len(goMods) > 0 {
-		parseGoModGraph(g, rootID, baseDir, repos)
+		parseGoModGraph(g, rootID, baseDir, vulnMap)
 	}
 
 	// For NPM, Python, Maven - add as direct dependencies for now
@@ -74,7 +74,7 @@ func GenerateDependencyGraph(outputPath string, projectName string, goMods []dep
 	for _, pkg := range npmPkgs {
 		nodeID := sanitizeID("npm-" + pkg.Name)
 		if !g.hasNode(nodeID) {
-			isVuln := hasVulnerability(pkg.Name, repos)
+			isVuln := vulnMap[pkg.Name]
 			g.addNode(Node{
 				ID:           nodeID,
 				Label:        truncate(pkg.Name, 40),
@@ -91,7 +91,7 @@ func GenerateDependencyGraph(outputPath string, projectName string, goMods []dep
 	for _, pkg := range pythonPkgs {
 		nodeID := sanitizeID("python-" + pkg.Name)
 		if !g.hasNode(nodeID) {
-			isVuln := hasVulnerability(pkg.Name, repos)
+			isVuln := vulnMap[pkg.Name]
 			g.addNode(Node{
 				ID:           nodeID,
 				Label:        truncate(pkg.Name, 40),
@@ -108,7 +108,7 @@ func GenerateDependencyGraph(outputPath string, projectName string, goMods []dep
 	for _, pkg := range mavenDeps {
 		nodeID := sanitizeID("maven-" + pkg.Name)
 		if !g.hasNode(nodeID) {
-			isVuln := hasVulnerability(pkg.Name, repos)
+			isVuln := vulnMap[pkg.Name]
 			g.addNode(Node{
 				ID:           nodeID,
 				Label:        truncate(pkg.Name, 40),
@@ -133,7 +133,7 @@ func GenerateDependencyGraph(outputPath string, projectName string, goMods []dep
 }
 
 // parseGoModGraph parses the output of `go mod graph` to get transitive dependencies
-func parseGoModGraph(g *Graph, rootID, baseDir string, repos []repo.Assessment) {
+func parseGoModGraph(g *Graph, rootID, baseDir string, vulnMap map[string]bool) {
 	cmd := exec.Command("go", "mod", "graph")
 	cmd.Dir = baseDir
 	output, err := cmd.Output()
@@ -169,7 +169,7 @@ func parseGoModGraph(g *Graph, rootID, baseDir string, repos []repo.Assessment) 
 
 		// Extract package name from versioned string (e.g., "github.com/foo/bar@v1.2.3" -> "github.com/foo/bar")
 		toName := extractPackageName(toPkg)
-		isVuln := hasVulnerability(toName, repos)
+		isVuln := vulnMap[toName]
 
 		// Add the "to" node if it doesn't exist
 		if !g.hasNode(toID) {
@@ -186,7 +186,7 @@ func parseGoModGraph(g *Graph, rootID, baseDir string, repos []repo.Assessment) 
 		// Add the "from" node if it's not the root and doesn't exist
 		if fromID != rootID && !g.hasNode(fromID) {
 			fromName := extractPackageName(fromPkg)
-			fromVuln := hasVulnerability(fromName, repos)
+			fromVuln := vulnMap[fromName]
 			g.addNode(Node{
 				ID:           fromID,
 				Label:        truncate(fromName, 50),

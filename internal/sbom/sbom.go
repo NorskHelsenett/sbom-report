@@ -9,8 +9,9 @@ import (
 	"sort"
 	"strings"
 
-	cdx "github.com/CycloneDX/cyclonedx-go"
 	"sbom-report/internal/deps"
+
+	cdx "github.com/CycloneDX/cyclonedx-go"
 )
 
 type Summary struct {
@@ -44,6 +45,7 @@ func RunTrivy(trivyPath, sbomFormat, baseDir, outputPath string) TrivyResult {
 	args := []string{
 		"fs",
 		"--format", sbomFormat,
+		"--scanners", "vuln",
 		"--output", outputPath,
 		baseDir,
 	}
@@ -67,13 +69,13 @@ type VulnResult struct {
 	Results []struct {
 		Target          string `json:"Target"`
 		Vulnerabilities []struct {
-			VulnerabilityID string  `json:"VulnerabilityID"`
-			PkgName         string  `json:"PkgName"`
+			VulnerabilityID  string `json:"VulnerabilityID"`
+			PkgName          string `json:"PkgName"`
 			InstalledVersion string `json:"InstalledVersion"`
-			Severity        string  `json:"Severity"`
-			Title           string  `json:"Title"`
-			Description     string  `json:"Description"`
-			CVSS            map[string]struct {
+			Severity         string `json:"Severity"`
+			Title            string `json:"Title"`
+			Description      string `json:"Description"`
+			CVSS             map[string]struct {
 				V3Score float64 `json:"V3Score"`
 			} `json:"CVSS"`
 		} `json:"Vulnerabilities"`

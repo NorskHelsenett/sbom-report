@@ -112,6 +112,7 @@ func NewServer(dbPath string) (*Server, error) {
 		{
 			dependencies.GET("", handler.ListDependencies)
 			dependencies.GET("/stats", handler.GetDependencyStats)
+			dependencies.GET("/:id/usage", handler.GetDependencyUsage)
 		}
 	}
 

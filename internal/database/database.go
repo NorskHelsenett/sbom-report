@@ -161,13 +161,69 @@ func GetOrCreateDependency(pkgType, name, version string) (*Dependency, error) {
 	return &dep, nil
 }
 
-// GetDependencyUsage returns all reports that use a specific dependency
-func GetDependencyUsage(dependencyID uint) ([]Report, error) {
+// GetOrCreateDependencyWithVulns gets an existing dependency or creates a new one,
+// updating the vulnerability count
+func GetOrCreateDependencyWithVulns(pkgType, name, version string, vulnCount int) (*Dependency, error) {
 	var dep Dependency
-	if err := DB.Preload("Reports").First(&dep, dependencyID).Error; err != nil {
+
+	// Try to find existing dependency
+	result := DB.Where("package_type = ? AND name = ? AND version = ?", pkgType, name, version).First(&dep)
+	if result.Error == nil {
+		// Update vulnerability count if it changed
+		if dep.VulnCount != vulnCount {
+			dep.VulnCount = vulnCount
+			if err := DB.Save(&dep).Error; err != nil {
+				return nil, err
+			}
+		}
+		return &dep, nil
+	}
+
+	// Create new dependency with vulnerability count
+	dep = Dependency{
+		PackageType: pkgType,
+		Name:        name,
+		Version:     version,
+		VulnCount:   vulnCount,
+	}
+
+	if err := DB.Create(&dep).Error; err != nil {
 		return nil, err
 	}
-	return dep.Reports, nil
+
+	return &dep, nil
+}
+
+// GetDependencyUsage returns the latest report for each project that uses a specific dependency
+func GetDependencyUsage(dependencyID uint) ([]Report, error) {
+	var reports []Report
+
+	query := `
+		SELECT r.*
+		FROM reports r
+		INNER JOIN report_dependencies rd ON r.id = rd.report_id
+		WHERE rd.dependency_id = ?
+		AND r.id IN (
+			SELECT MAX(r2.id)
+			FROM reports r2
+			INNER JOIN report_dependencies rd2 ON r2.id = rd2.report_id
+			WHERE rd2.dependency_id = ?
+			GROUP BY r2.project_id
+		)
+		ORDER BY r.generated_at DESC
+	`
+
+	if err := DB.Raw(query, dependencyID, dependencyID).Scan(&reports).Error; err != nil {
+		return nil, err
+	}
+
+	return reports, nil
+}
+
+// DependencyWithUsage extends Dependency with usage count
+type DependencyWithUsage struct {
+	Dependency
+	ProjectCount int `json:"project_count"`
 }
 
 // GetAllDependencies returns all unique dependencies
@@ -186,4 +242,49 @@ func GetDependenciesByPackageType(pkgType string) ([]Dependency, error) {
 		return nil, err
 	}
 	return deps, nil
+}
+
+// GetAllDependenciesWithUsage returns all dependencies with project usage count
+func GetAllDependenciesWithUsage() ([]DependencyWithUsage, error) {
+	var results []DependencyWithUsage
+
+	query := `
+		SELECT 
+			d.*,
+			COUNT(DISTINCT r.project_id) as project_count
+		FROM dependencies d
+		LEFT JOIN report_dependencies rd ON d.id = rd.dependency_id
+		LEFT JOIN reports r ON rd.report_id = r.id
+		GROUP BY d.id
+		ORDER BY project_count DESC, d.name ASC
+	`
+
+	if err := DB.Raw(query).Scan(&results).Error; err != nil {
+		return nil, err
+	}
+
+	return results, nil
+}
+
+// GetDependenciesByPackageTypeWithUsage returns dependencies filtered by package type with usage count
+func GetDependenciesByPackageTypeWithUsage(pkgType string) ([]DependencyWithUsage, error) {
+	var results []DependencyWithUsage
+
+	query := `
+		SELECT 
+			d.*,
+			COUNT(DISTINCT r.project_id) as project_count
+		FROM dependencies d
+		LEFT JOIN report_dependencies rd ON d.id = rd.dependency_id
+		LEFT JOIN reports r ON rd.report_id = r.id
+		WHERE d.package_type = ?
+		GROUP BY d.id
+		ORDER BY project_count DESC, d.name ASC
+	`
+
+	if err := DB.Raw(query, pkgType).Scan(&results).Error; err != nil {
+		return nil, err
+	}
+
+	return results, nil
 }

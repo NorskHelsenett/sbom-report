@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"sbom-report/internal/config"
@@ -69,14 +70,85 @@ func GenerateReportForRepo(repoURL, projectName, projectDesc string, cfg *config
 	graphPath := filepath.Join(cfg.OutDir, cfg.GraphSVGName)
 	graphData, _ := os.ReadFile(graphPath)
 
-	// Calculate total dependencies and vulnerabilities
-	totalDeps := len(rep.Dependencies.GoModules) + len(rep.Dependencies.NpmPackages) +
-		len(rep.Dependencies.PythonReqs) + len(rep.Dependencies.MavenDeps)
+	// Store dependencies first to get accurate count
+	dependencies := make([]*database.Dependency, 0)
 
+	// Helper function to find vulnerabilities for a package with flexible matching
+	findVulns := func(pkgName string) int {
+		// Try exact match first
+		if vulns, ok := cfg.VulnMap[pkgName]; ok {
+			fmt.Printf("DEBUG: Exact match found for %s: %d CVEs\n", pkgName, len(vulns))
+			return len(vulns)
+		}
+
+		// Try matching by checking if the package name contains or is contained in vuln map keys
+		for vulnPkg, vulns := range cfg.VulnMap {
+			// Check if they match after removing version suffixes like /v5, /v4, etc.
+			pkgBase := strings.TrimSuffix(pkgName, "/v5")
+			pkgBase = strings.TrimSuffix(pkgBase, "/v4")
+			pkgBase = strings.TrimSuffix(pkgBase, "/v3")
+			pkgBase = strings.TrimSuffix(pkgBase, "/v2")
+
+			vulnBase := strings.TrimSuffix(vulnPkg, "/v5")
+			vulnBase = strings.TrimSuffix(vulnBase, "/v4")
+			vulnBase = strings.TrimSuffix(vulnBase, "/v3")
+			vulnBase = strings.TrimSuffix(vulnBase, "/v2")
+
+			if pkgBase == vulnBase {
+				fmt.Printf("DEBUG: Fuzzy match found for %s (matched %s): %d CVEs\n", pkgName, vulnPkg, len(vulns))
+				return len(vulns)
+			}
+		}
+
+		return 0
+	}
+
+	// Process Go modules
+	for _, goMod := range rep.Dependencies.GoModules {
+		vulnCount := findVulns(goMod.Path)
+		dep, err := database.GetOrCreateDependencyWithVulns("go", goMod.Path, goMod.Version, vulnCount)
+		if err == nil {
+			dependencies = append(dependencies, dep)
+		}
+	}
+
+	// Process NPM packages
+	for _, pkg := range rep.Dependencies.NpmPackages {
+		vulnCount := findVulns(pkg.Name)
+		dep, err := database.GetOrCreateDependencyWithVulns("npm", pkg.Name, pkg.Version, vulnCount)
+		if err == nil {
+			dependencies = append(dependencies, dep)
+		}
+	}
+
+	// Process Python packages
+	for _, pkg := range rep.Dependencies.PythonReqs {
+		vulnCount := findVulns(pkg.Name)
+		dep, err := database.GetOrCreateDependencyWithVulns("python", pkg.Name, pkg.Version, vulnCount)
+		if err == nil {
+			dependencies = append(dependencies, dep)
+		}
+	}
+
+	// Process Maven dependencies
+	for _, pkg := range rep.Dependencies.MavenDeps {
+		vulnCount := findVulns(pkg.Name)
+		dep, err := database.GetOrCreateDependencyWithVulns("maven", pkg.Name, pkg.Version, vulnCount)
+		if err == nil {
+			dependencies = append(dependencies, dep)
+		}
+	}
+
+	// Calculate total unique dependencies from what was actually stored
+	totalDeps := len(dependencies)
+
+	// Count total vulnerabilities (sum of all CVEs across all packages)
 	totalVulns := 0
 	for _, vulns := range cfg.VulnMap {
 		totalVulns += len(vulns)
 	}
+
+	fmt.Printf("DEBUG: Storing report with %d dependencies and %d vulnerabilities\n", totalDeps, totalVulns)
 
 	// Create database report
 	dbReport := &database.Report{
@@ -91,41 +163,7 @@ func GenerateReportForRepo(repoURL, projectName, projectDesc string, cfg *config
 		TotalVulns:        totalVulns,
 	}
 
-	// Store dependencies (deduplicated)
-	dependencies := make([]*database.Dependency, 0)
-
-	// Process Go modules
-	for _, goMod := range rep.Dependencies.GoModules {
-		dep, err := database.GetOrCreateDependency("go", goMod.Path, goMod.Version)
-		if err == nil {
-			dependencies = append(dependencies, dep)
-		}
-	}
-
-	// Process NPM packages
-	for _, pkg := range rep.Dependencies.NpmPackages {
-		dep, err := database.GetOrCreateDependency("npm", pkg.Name, pkg.Version)
-		if err == nil {
-			dependencies = append(dependencies, dep)
-		}
-	}
-
-	// Process Python packages
-	for _, pkg := range rep.Dependencies.PythonReqs {
-		dep, err := database.GetOrCreateDependency("python", pkg.Name, pkg.Version)
-		if err == nil {
-			dependencies = append(dependencies, dep)
-		}
-	}
-
-	// Process Maven dependencies
-	for _, pkg := range rep.Dependencies.MavenDeps {
-		dep, err := database.GetOrCreateDependency("maven", pkg.Name, pkg.Version)
-		if err == nil {
-			dependencies = append(dependencies, dep)
-		}
-	}
-
+	// Attach dependencies to report
 	dbReport.Dependencies = make([]database.Dependency, len(dependencies))
 	for i, dep := range dependencies {
 		dbReport.Dependencies[i] = *dep
@@ -173,6 +211,15 @@ func generateReport(cfg *config.Config) (*report.Report, error) {
 		fmt.Printf("Warning: vulnerability scan failed: %v\n", err)
 		vulnMap = make(map[string][]sbom.VulnInfo)
 	}
+
+	// Debug: Print vulnerability scan results
+	totalCVEs := 0
+	for pkg, vulns := range vulnMap {
+		totalCVEs += len(vulns)
+		fmt.Printf("DEBUG: Package %s has %d CVEs\n", pkg, len(vulns))
+	}
+	fmt.Printf("DEBUG: Total packages with vulnerabilities: %d\n", len(vulnMap))
+	fmt.Printf("DEBUG: Total CVEs found: %d\n", totalCVEs)
 
 	// Convert sbom.VulnInfo to config.VulnInfo for cfg
 	cfgVulnMap := make(map[string][]config.VulnInfo)
@@ -224,6 +271,71 @@ func generateReport(cfg *config.Config) (*report.Report, error) {
 	// Generate dependency graph SVG
 	graphPath := filepath.Join(cfg.OutDir, cfg.GraphSVGName)
 	projectName := filepath.Base(cfg.BaseDir)
+
+	// Create a vulnerability map for the graph with flexible matching
+	// Include all package variations so exact lookups work in the graph
+	graphVulnMap := make(map[string]bool)
+	for pkgName := range cfg.VulnMap {
+		graphVulnMap[pkgName] = true
+
+		// Also add version-stripped variants for better matching
+		stripped := strings.TrimSuffix(pkgName, "/v5")
+		stripped = strings.TrimSuffix(stripped, "/v4")
+		stripped = strings.TrimSuffix(stripped, "/v3")
+		stripped = strings.TrimSuffix(stripped, "/v2")
+		if stripped != pkgName {
+			graphVulnMap[stripped] = true
+		}
+	}
+
+	// Also check all discovered packages and add them if they have vulnerabilities
+	// This ensures the graph uses the same matching logic as dependency storage
+	checkAndAddVuln := func(pkgName string) {
+		// Try exact match first
+		if _, ok := cfg.VulnMap[pkgName]; ok {
+			graphVulnMap[pkgName] = true
+			return
+		}
+
+		// Try matching with version suffix removal
+		for vulnPkg := range cfg.VulnMap {
+			pkgBase := strings.TrimSuffix(pkgName, "/v5")
+			pkgBase = strings.TrimSuffix(pkgBase, "/v4")
+			pkgBase = strings.TrimSuffix(pkgBase, "/v3")
+			pkgBase = strings.TrimSuffix(pkgBase, "/v2")
+
+			vulnBase := strings.TrimSuffix(vulnPkg, "/v5")
+			vulnBase = strings.TrimSuffix(vulnBase, "/v4")
+			vulnBase = strings.TrimSuffix(vulnBase, "/v3")
+			vulnBase = strings.TrimSuffix(vulnBase, "/v2")
+
+			if pkgBase == vulnBase {
+				graphVulnMap[pkgName] = true
+				return
+			}
+		}
+	}
+
+	// Check all Go modules
+	for _, goMod := range rep.Dependencies.GoModules {
+		checkAndAddVuln(goMod.Path)
+	}
+
+	// Check all NPM packages
+	for _, pkg := range rep.Dependencies.NpmPackages {
+		checkAndAddVuln(pkg.Name)
+	}
+
+	// Check all Python packages
+	for _, pkg := range rep.Dependencies.PythonReqs {
+		checkAndAddVuln(pkg.Name)
+	}
+
+	// Check all Maven packages
+	for _, pkg := range rep.Dependencies.MavenDeps {
+		checkAndAddVuln(pkg.Name)
+	}
+
 	if err := graph.GenerateDependencyGraph(
 		graphPath,
 		projectName,
@@ -232,6 +344,7 @@ func generateReport(cfg *config.Config) (*report.Report, error) {
 		rep.Dependencies.PythonReqs,
 		rep.Dependencies.MavenDeps,
 		rep.Repos,
+		graphVulnMap,
 	); err != nil {
 		fmt.Printf("Warning: failed to generate dependency graph: %v\n", err)
 	}

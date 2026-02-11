@@ -54,4 +54,8 @@ export const getDependencyStats = () => {
   return api.get('/v1/dependencies/stats');
 };
 
+export const getDependencyUsage = (id) => {
+  return api.get(`/v1/dependencies/${id}/usage`);
+};
+
 export default api;
