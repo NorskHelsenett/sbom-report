@@ -151,6 +151,13 @@ func run(cfg *config.Config) error {
 	graphPath := filepath.Join(cfg.OutDir, cfg.GraphSVGName)
 	projectName := filepath.Base(cfg.BaseDir)
 	fmt.Println("\nGenerating dependency graph...")
+	
+	// Create vulnerability map for graph
+	vulnPackages := make(map[string]bool)
+	for pkg := range vulnMap {
+		vulnPackages[pkg] = true
+	}
+	
 	if err := graph.GenerateDependencyGraph(
 		graphPath,
 		projectName,
@@ -159,6 +166,7 @@ func run(cfg *config.Config) error {
 		rep.Dependencies.PythonReqs,
 		rep.Dependencies.MavenDeps,
 		rep.Repos,
+		vulnPackages,
 	); err != nil {
 		fmt.Printf("Warning: failed to generate dependency graph: %v\n", err)
 	} else {

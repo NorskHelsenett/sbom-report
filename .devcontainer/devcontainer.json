@@ -18,7 +18,8 @@
                 "ghcr.io/devcontainers-extra/features/npm-package:1": {},
                 "ghcr.io/devcontainers/features/node:1": {},
                 "ghcr.io/dhoeric/features/trivy:1": {},
-                "ghcr.io/swift-server-community/swift-devcontainer-features/sqlite:1": {}
+                "ghcr.io/swift-server-community/swift-devcontainer-features/sqlite:1": {},
+                "ghcr.io/devcontainers-community/features/llvm": {}
         }
 
         // Features to add to the dev container. More info: https://containers.dev/features.
